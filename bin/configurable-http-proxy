@@ -26,6 +26,7 @@ args
     .option('--ssl-ciphers <ciphers>', '`:`-separated ssl cipher list. Default excludes RC4')
     .option('--ssl-allow-rc4', 'Allow RC4 cipher for SSL (disabled by default)')
     .option('--ssl-dhparam <dhparam-file>', 'SSL Diffie-Helman Parameters pem file, if any')
+    .option('--ssl-remove-root-ca', 'Remove the Root CA from a self-signed cert')
     .option('--api-ip <ip>', 'Inward-facing IP for API requests', 'localhost')
     .option('--api-port <n>', 'Inward-facing port for API requests (defaults to --port=value+1)', parseInt)
     .option('--api-ssl-key <keyfile>', 'SSL key to use, if any, for API requests')
@@ -33,6 +34,7 @@ args
     .option('--api-ssl-ca <ca-file>', 'SSL certificate authority, if any, for API requests')
     .option('--api-ssl-request-cert', 'Request SSL certs to authenticate clients for API requests')
     .option('--api-ssl-reject-unauthorized', 'Reject unauthorized SSL connections (only meaningful if --api-ssl-request-cert is given)')
+    .option('--api-ssl-remove-root-ca', 'Remove the Root CA from a self-signed cert')
     .option('--default-target <host>', 'Default proxy target (proto://host[:port])')
     .option('--error-target <host>', 'Alternate server for handling proxy errors (proto://host[:port])')
     .option('--error-path <path>', 'Alternate server for handling proxy errors (proto://host[:port])')
@@ -103,6 +105,35 @@ if (args.sslCiphers) {
     ].join(':');
 }
 
+var removeRootCA = function(cert) {
+    var certString = "";
+    if (Buffer.isBuffer(cert)) {
+        certString = cert.toString();
+    } else {
+        certString = cert;
+    }
+    if (!certString || !certString.match(/-END CERTIFICATE-/)) {
+        // If this doesn't look like certificates then bail
+        return cert;
+    }
+    var chain = certString.split("\n");
+    var certChain = [];
+    var cert = [];
+    for (var i = 0; i < chain.length; i++) {
+        var line = chain[i];
+        if (line.length === 0) {
+            continue;
+        }
+        cert.push(line);
+        if (line.match(/-END CERTIFICATE-/)) {
+            certChain.push(cert.join("\n"));
+            cert = [];
+        }
+    }
+    certChain.splice(-1);
+    return certChain;
+}
+
 // ssl options
 if (args.sslKey || args.sslCert) {
     options.ssl = {};
@@ -110,7 +141,11 @@ if (args.sslKey || args.sslCert) {
         options.ssl.key = fs.readFileSync(args.sslKey);
     }
     if (args.sslCert) {
-        options.ssl.cert = fs.readFileSync(args.sslCert);
+        if (args.sslRemoveRootCa) {
+            options.ssl.cert = removeRootCA(fs.readFileSync(args.sslCert));
+        } else {
+            options.ssl.cert = fs.readFileSync(args.sslCert);
+        }
     }
     if (args.sslCa) {
         options.ssl.ca = fs.readFileSync(args.sslCa);
@@ -134,7 +169,11 @@ if (args.apiSslKey || args.apiSslCert) {
         options.api_ssl.key = fs.readFileSync(args.apiSslKey);
     }
     if (args.apiSslCert) {
-        options.api_ssl.cert = fs.readFileSync(args.apiSslCert);
+        if (args.apiSslRemoveRootCa) {
+            options.api_ssl.cert = removeRootCA(fs.readFileSync(args.apiSslCert));
+        } else {
+            options.api_ssl.cert = fs.readFileSync(args.apislCert);
+        }
     }
     if (args.apiSslCa) {
         options.api_ssl.ca = fs.readFileSync(args.apiSslCa);
